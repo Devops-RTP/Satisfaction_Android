@@ -21,14 +21,35 @@ The release build is signed with the debug key so it installs right away. Use yo
 3. Edit that file over USB from a PC (it shows up in Windows Explorer), then reload it in the app (see Admin menu).
 
 ## Admin menu
-Tap the **top-right corner 5 times** within 3 seconds, then enter the PIN (`admin_pin`, default **2468**. Change it!).
-The menu has these options: Status (queue size, last upload result), Reload settings, Send now, Open Android settings, Exit.
+To open the admin menu, tap the **top-right corner 5 times** within 3 seconds, then enter the PIN (`admin_pin`, default **2468**. Change it!).
 
-## Locking the tablet to the app
-Pick one of these:
-- **Set as Home app:** press Home, choose *Satisfaction Kiosk* → *Always*. The app then starts on boot and the Home button returns to it.
-- **Screen pinning:** turn on *Settings > Security > Pin windows*, then set `pin_screen = true` in the INI.
-- **Samsung Knox / MDM kiosk mode** (Intune, Knox Manage, etc.): this is the most locked-down option for a fleet.
+- **Settings…**: edit every kiosk.ini value on the tablet. Choices like database type are drop-downs, on/off values are switches, and passwords are masked. **Test connection** checks the database or API before you save. Keys added in newer app versions appear here automatically.
+- **Status**: shows the lock mode, how many responses are waiting to upload, and the last upload result.
+- **Send queued responses now** / **Reload kiosk.ini from file**
+- **Unlock and open Android settings (15 min)**: leaves the kiosk for maintenance. It re-locks automatically after 15 minutes, or immediately with **Resume kiosk lock**.
+- **Remove kiosk lockdown permanently…**: shown only when the app is device owner; use it before reassigning the tablet.
+
+## Locking the tablet (recommended: device owner)
+For full lockdown, make the app the tablet's **device owner**. While the kiosk runs:
+- Settings, the notification shade and quick settings, and the Home, Recents and power-button menu are all blocked
+- the lock screen is disabled, so pressing power and waking the tablet returns straight to the survey
+- the screen stays on while the tablet is plugged in (and always while the app is in front)
+- safe-mode boot and adding users are blocked
+- after a reboot the tablet comes straight back to the survey
+
+**One-time setup per tablet:**
+1. Factory reset the tablet, or remove every account (Samsung and Google) under Settings > Accounts. Android refuses device owner while accounts exist.
+2. Skip account sign-in during setup. Turn on Developer options (tap Build number 7 times) and USB debugging.
+3. Install the APK, then from a PC with platform-tools:
+   ```
+   adb install app-release.apk
+   adb shell dpm set-device-owner ca.rtp.satisfaction/.KioskAdminReceiver
+   ```
+4. Open the app. It locks itself. You can turn USB debugging off again afterwards.
+
+If the tablets are managed by an MDM (Intune, Knox Manage, etc.), use its single-app kiosk mode with this APK instead. Device owner and an MDM can't both own the device.
+
+**Without device owner** the app still runs full-screen and keeps the screen awake, but users can swipe down to reach the system bars. Setting `screen_pinning = true` adds Android's screen pinning, which is weaker: Back + Recents held together unpins.
 
 ## Destinations (`[database] type`)
 | type | Notes |

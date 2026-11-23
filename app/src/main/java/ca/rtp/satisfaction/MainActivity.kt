@@ -1,7 +1,6 @@
 package ca.rtp.satisfaction
 
 import android.app.Activity
-import android.app.ActivityManager
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.ActivityInfo
@@ -42,6 +41,15 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // If the power button is pressed, come straight back over the lock screen when woken.
+        if (Build.VERSION.SDK_INT >= 27) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
+        }
     }
 
     override fun onResume() {
@@ -75,15 +83,16 @@ class MainActivity : Activity() {
             "auto" -> ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
             else -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         }
-        if (cfg.ini.bool("general", "pin_screen", false)) startPinning()
-        buildUi()
-    }
+        if (cfg.keepAwake) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-    private fun startPinning() {
-        val am = getSystemService(ACTIVITY_SERVICE) as ActivityManager
-        if (am.lockTaskModeState == ActivityManager.LOCK_TASK_MODE_NONE) {
-            try { startLockTask() } catch (_: Exception) {}
+        // An admin "exit" lasts at most 15 minutes, then the kiosk locks itself again.
+        if (app.kioskSuspendedAt > 0 &&
+            System.currentTimeMillis() - app.kioskSuspendedAt > 15 * 60 * 1000L) {
+            app.kioskSuspendedAt = 0
         }
+        if (app.kioskSuspendedAt == 0L) DeviceLock.engage(this, cfg)
+        buildUi()
     }
 
     private fun hideSystemUi() {
@@ -230,19 +239,43 @@ class MainActivity : Activity() {
     }
 
     private fun adminMenu() {
-        val items = arrayOf("Status", "Reload settings (kiosk.ini)", "Send queued responses now",
-            "Open Android settings", "Exit kiosk")
+        val owner = DeviceLock.isDeviceOwner(this)
+        val actions = mutableListOf<Pair<String, () -> Unit>>(
+            "Settings…" to { SettingsDialog(this, onSaved = { reload() }, onClosed = { hideSystemUi() }).show() },
+            "Status" to { showStatus() },
+            "Send queued responses now" to { app.uploader.poke(); hideSystemUi() },
+            "Reload kiosk.ini from file" to { reload() },
+        )
+        if (app.kioskSuspendedAt > 0) {
+            actions += "Resume kiosk lock" to { app.kioskSuspendedAt = 0; reload() }
+        }
+        actions += "Unlock and open Android settings (15 min)" to { exitKiosk() }
+        if (owner) actions += "Remove kiosk lockdown permanently…" to { confirmRemoveOwner() }
+
         AlertDialog.Builder(this)
             .setTitle("Satisfaction Kiosk ${BuildConfigInfo.version(this)}")
-            .setItems(items) { _, which ->
-                when (which) {
-                    0 -> showStatus()
-                    1 -> { cfg = app.reloadConfig(); applyConfig(); hideSystemUi() }
-                    2 -> { app.uploader.poke(); hideSystemUi() }
-                    3 -> exitKiosk(openSettings = true)
-                    4 -> exitKiosk(openSettings = false)
-                }
+            .setItems(actions.map { it.first }.toTypedArray()) { _, which -> actions[which].second() }
+            .setOnDismissListener { hideSystemUi() }
+            .show()
+    }
+
+    private fun reload() {
+        cfg = app.reloadConfig()
+        applyConfig()
+        hideSystemUi()
+    }
+
+    private fun confirmRemoveOwner() {
+        AlertDialog.Builder(this)
+            .setTitle("Remove lockdown?")
+            .setMessage("This removes device-owner mode: Settings, notifications and the Home button " +
+                    "work normally again. To lock the tablet again you must re-run the adb setup command " +
+                    "(the tablet may need a factory reset for that).")
+            .setPositiveButton("Remove") { _, _ ->
+                DeviceLock.removeDeviceOwner(this)
+                reload()
             }
+            .setNegativeButton("Cancel", null)
             .setOnDismissListener { hideSystemUi() }
             .show()
     }
@@ -256,6 +289,7 @@ class MainActivity : Activity() {
             Site: ${cfg.siteId}
             Device: ${cfg.deviceId}
             Destination: ${cfg.dbType}${if (cfg.dbType in setOf("http", "https", "rest", "api")) " → " + cfg.url else if (cfg.host.isNotBlank() && cfg.dbType != "none") " → " + cfg.host + "/" + cfg.database else ""}
+            Lock: ${DeviceLock.describe(this, cfg)}
             Waiting to upload: $pending
             Last upload: ${app.uploader.lastStatus}
             ${cfg.loadError ?: ""}
@@ -268,13 +302,10 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun exitKiosk(openSettings: Boolean) {
-        try { stopLockTask() } catch (_: Exception) {}
-        if (openSettings) {
-            startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        } else {
-            finishAndRemoveTask()
-        }
+    private fun exitKiosk() {
+        app.kioskSuspendedAt = System.currentTimeMillis()
+        DeviceLock.release(this)
+        startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 }
 

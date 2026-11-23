@@ -18,6 +18,9 @@ class KioskApp : Application() {
     @Volatile var config: KioskConfig? = null
         private set
 
+    /** When an admin temporarily unlocked the kiosk (0 = locked as configured). */
+    @Volatile var kioskSuspendedAt: Long = 0L
+
     override fun onCreate() {
         super.onCreate()
         queue = LocalQueue(this)

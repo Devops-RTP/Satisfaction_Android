@@ -38,6 +38,9 @@ data class KioskConfig(
     val retrySeconds: Int,
     val batchSize: Int,
     val csvBackup: Boolean,
+    val lockDevice: Boolean,
+    val screenPinning: Boolean,
+    val keepAwake: Boolean,
     val loadError: String?,
 ) {
     companion object {
@@ -65,6 +68,19 @@ data class KioskConfig(
             }
             return from(ini, androidId(ctx), error)
         }
+
+        /** Writes new INI text safely (temp file + rename) so a crash can't leave a half-written file. */
+        fun save(ctx: Context, text: String) {
+            val file = configFile(ctx)
+            val tmp = File(file.parentFile, FILE_NAME + ".tmp")
+            tmp.writeText(text, Charsets.UTF_8)
+            if (!tmp.renameTo(file)) {
+                file.writeText(text, Charsets.UTF_8)
+                tmp.delete()
+            }
+        }
+
+        fun fromText(ctx: Context, text: String): KioskConfig = from(IniFile.parse(text), androidId(ctx), null)
 
         @SuppressLint("HardwareIds")
         private fun androidId(ctx: Context): String =
@@ -106,6 +122,9 @@ data class KioskConfig(
                 retrySeconds = ini.int("queue", "retry_seconds", 30).coerceIn(5, 3600),
                 batchSize = ini.int("queue", "batch_size", 50).coerceIn(1, 500),
                 csvBackup = ini.bool("local", "csv_backup", true),
+                lockDevice = ini.bool("kiosk", "lock_device", true),
+                screenPinning = ini.bool("kiosk", "screen_pinning", ini.bool("general", "pin_screen", false)),
+                keepAwake = ini.bool("kiosk", "keep_awake", true),
                 loadError = error,
             )
         }

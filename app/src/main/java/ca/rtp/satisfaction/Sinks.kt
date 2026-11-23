@@ -9,6 +9,9 @@ import java.sql.DriverManager
 /** A destination for responses. send() must throw if the batch was not stored. */
 interface ResponseSink {
     fun send(batch: List<SurveyResponse>)
+
+    /** Connection check used by the settings screen. Throws on failure. */
+    fun test() = send(emptyList())
 }
 
 object Sinks {
@@ -85,6 +88,16 @@ class JdbcSink(private val cfg: KioskConfig, private val kind: String) : Respons
         "mssql" -> "net.sourceforge.jtds.jdbc.Driver"
         "mysql" -> "com.mysql.jdbc.Driver"
         else -> "org.postgresql.Driver"
+    }
+
+    override fun test() {
+        require(cfg.host.isNotBlank()) { "[database] host is empty" }
+        require(tableRegex.matches(cfg.table)) { "[database] table name '${cfg.table}' is not valid" }
+        Class.forName(driverClass())
+        DriverManager.setLoginTimeout(15)
+        DriverManager.getConnection(jdbcUrl(), cfg.username, cfg.password).use { conn ->
+            conn.createStatement().use { st -> st.executeQuery("SELECT 1").use { it.next() } }
+        }
     }
 
     override fun send(batch: List<SurveyResponse>) {
