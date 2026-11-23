@@ -1,0 +1,47 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'ca.rtp.satisfaction'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'ca.rtp.satisfaction'
+        minSdk 26          // Android 8.0+ : covers every Samsung Galaxy Tab still in service
+        targetSdk 34
+        versionCode 1
+        versionName '1.0.0'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            // Signed with the debug key so the CI build is installable out of the box.
+            // Replace with your own keystore for production distribution.
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    packaging {
+        resources {
+            excludes += ['META-INF/*', 'META-INF/**']
+        }
+    }
+}
+
+dependencies {
+    // JDBC drivers for direct-to-database mode. All are pure Java and run on Android.
+    implementation 'net.sourceforge.jtds:jtds:1.3.1'            // Microsoft SQL Server
+    implementation 'mysql:mysql-connector-java:5.1.49'          // MySQL / MariaDB
+    implementation 'org.postgresql:postgresql:42.2.27'          // PostgreSQL
+}
